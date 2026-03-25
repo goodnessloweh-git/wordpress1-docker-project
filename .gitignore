@@ -1,2 +1,21 @@
-.env
-wp-config.php
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Sensitive files
+*.pem
+*.key
+
+# Kubernetes
+.kube/
+
+# macOS
+.DS_Store
+# Terraform
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+*.tfvars
