@@ -16,19 +16,31 @@ variable "cluster_version" {
   default     = "1.31"
 }
 
-variable "vpc_cidr" {
-  description = "VPC CIDR block"
-  type        = string
-  default     = "10.0.0.0/16"
-}
-
-variable "public_subnet_cidrs" {
-  description = "Public subnet CIDR blocks across three AZs"
-  type        = list(string)
-  default     = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-}
-
 variable "subnet_ids" {
   description = "Existing subnet IDs for EKS cluster (at least 2, across AZs)"
   type        = list(string)
+}
+
+variable "node_instance_types" {
+  description = "EC2 instance types for EKS managed node group"
+  type        = list(string)
+  default     = ["t3.micro"]
+}
+
+variable "node_desired_size" {
+  description = "Desired number of EKS worker nodes"
+  type        = number
+  default     = 2
+}
+
+variable "node_min_size" {
+  description = "Minimum number of EKS worker nodes"
+  type        = number
+  default     = 1
+}
+
+variable "node_max_size" {
+  description = "Maximum number of EKS worker nodes"
+  type        = number
+  default     = 3
 }

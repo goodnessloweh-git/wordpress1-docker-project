@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: wordpress
+  namespace: wordpress
 spec:
   selector:
     matchLabels:
@@ -11,6 +12,8 @@ spec:
       labels:
         app: wordpress
     spec:
+      imagePullSecrets:
+      - name: regcred
       containers:
       - name: wordpress
         image: goodness21/wordpress-custom:latest
@@ -28,11 +31,37 @@ spec:
           value: wordpress
         ports:
         - containerPort: 80
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 60
+          periodSeconds: 20
+        volumeMounts:
+        - name: wordpress-data
+          mountPath: /var/www/html/wp-content
+      volumes:
+      - name: wordpress-data
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: wordpress
+  namespace: wordpress
 spec:
   type: LoadBalancer
   selector:

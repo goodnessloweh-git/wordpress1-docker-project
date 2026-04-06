@@ -1,0 +1,73 @@
+name: CI/CD - Infra (Terraform)
+
+on:
+  push:
+    paths:
+      - 'eks-terraform/**'
+      - 'k8s/**'
+  workflow_dispatch: {}
+
+env:
+  AWS_REGION: us-east-1
+  TF_DIR: eks-terraform
+  K8S_DIR: k8s
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+      - name: Terraform Init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform plan -input=false -out=tfplan
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform apply -input=false -auto-approve tfplan
+      - name: Setup kubectl
+        if: github.ref == 'refs/heads/main'
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.31.0
+      - name: Connect kubectl to EKS
+        if: github.ref == 'refs/heads/main'
+        run: |
+          CLUSTER_NAME=$(terraform -chdir="${TF_DIR}" output -raw cluster_name)
+          AWS_REGION=$(terraform -chdir="${TF_DIR}" output -raw cluster_region)
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+      - name: Apply namespace
+        if: github.ref == 'refs/heads/main'
+        run: kubectl apply -f "${K8S_DIR}/namespace.yaml"
+      - name: Create image pull secret
+        if: github.ref == 'refs/heads/main'
+        run: |
+          kubectl -n wordpress create secret docker-registry regcred \
+            --docker-server='${{ secrets.DOCKER_REGISTRY }}' \
+            --docker-username='${{ secrets.DOCKER_USERNAME }}' \
+            --docker-password='${{ secrets.DOCKER_PASSWORD }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+      - name: Deploy Kubernetes manifests
+        if: github.ref == 'refs/heads/main'
+        run: |
+          kubectl apply -f "${K8S_DIR}/mysql-secret.yaml" -f "${K8S_DIR}/wordpress-configmap.yaml"
+          kubectl apply -f "${K8S_DIR}/mysql-deployment.yaml" -f "${K8S_DIR}/wordpress-deployment.yaml"
+          if kubectl api-resources | grep -q '^horizontalpodautoscalers[[:space:]]'; then
+            kubectl apply -f "${K8S_DIR}/hpa.yaml"
+          fi
+          kubectl -n wordpress wait --for=condition=available deployment/mysql --timeout=600s
+          kubectl -n wordpress wait --for=condition=available deployment/wordpress --timeout=600s
+          kubectl -n wordpress get pods,svc,hpa
+          kubectl -n wordpress get svc wordpress
