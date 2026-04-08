@@ -42,6 +42,11 @@ jobs:
         uses: azure/setup-kubectl@v4
         with:
           version: v1.31.0
+      - name: Setup Helm
+        if: github.ref == 'refs/heads/main'
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.15.4
       - name: Connect kubectl to EKS
         if: github.ref == 'refs/heads/main'
         run: |
@@ -59,14 +64,58 @@ jobs:
             --docker-username='${{ secrets.DOCKER_USERNAME }}' \
             --docker-password='${{ secrets.DOCKER_PASSWORD }}' \
             --dry-run=client -o yaml | kubectl apply -f -
-      - name: Deploy Kubernetes manifests
+      - name: Create MySQL secret
         if: github.ref == 'refs/heads/main'
+        env:
+          MYSQL_DATABASE: ${{ vars.MYSQL_DATABASE }}
+          MYSQL_USER: ${{ secrets.MYSQL_USER }}
         run: |
-          kubectl apply -f "${K8S_DIR}/mysql-secret.yaml" -f "${K8S_DIR}/wordpress-configmap.yaml"
-          kubectl apply -f "${K8S_DIR}/mysql-deployment.yaml" -f "${K8S_DIR}/wordpress-deployment.yaml"
-          if kubectl api-resources | grep -q '^horizontalpodautoscalers[[:space:]]'; then
-            kubectl apply -f "${K8S_DIR}/hpa.yaml"
+          MYSQL_DATABASE_VALUE="${MYSQL_DATABASE:-wordpress}"
+          MYSQL_USER_VALUE="${MYSQL_USER:-wpuser}"
+
+          kubectl -n wordpress create secret generic mysql-secret \
+            --from-literal=mysql-root-password='${{ secrets.MYSQL_ROOT_PASSWORD }}' \
+            --from-literal=mysql-password='${{ secrets.MYSQL_PASSWORD }}' \
+            --from-literal=mysql-database="${MYSQL_DATABASE_VALUE}" \
+            --from-literal=mysql-user="${MYSQL_USER_VALUE}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+      - name: Deploy Kubernetes via Helm
+        if: github.ref == 'refs/heads/main'
+        env:
+          INGRESS_HOST: ${{ secrets.INGRESS_HOST }}
+          INGRESS_TLS_SECRET_NAME: ${{ secrets.INGRESS_TLS_SECRET_NAME }}
+          INGRESS_MANAGED_CERT_NAME: ${{ secrets.INGRESS_MANAGED_CERT_NAME }}
+        run: |
+          HELM_ARGS=(
+            --namespace wordpress
+            --set image.repository='${{ secrets.DOCKER_REGISTRY }}/${{ secrets.DOCKER_REPOSITORY }}'
+            --set image.tag='latest'
+          )
+
+          if ! kubectl get sc -o jsonpath='{range .items[*]}{.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}{"\n"}{end}' | grep -q '^true$'; then
+            echo "[info] No default StorageClass found; deploying with ephemeral storage"
+            HELM_ARGS+=(
+              --set persistence.mysql.enabled=false
+              --set persistence.wordpress.enabled=false
+            )
           fi
+
+          if [[ -n "${INGRESS_HOST}" ]]; then
+            HELM_ARGS+=(--set ingress.enabled=true --set "ingress.host=${INGRESS_HOST}")
+            if [[ -n "${INGRESS_MANAGED_CERT_NAME}" ]]; then
+              HELM_ARGS+=(
+                --set ingress.className=gce
+                --set ingress.managedCertificate.enabled=true
+                --set "ingress.managedCertificate.name=${INGRESS_MANAGED_CERT_NAME}"
+              )
+            fi
+            if [[ -n "${INGRESS_TLS_SECRET_NAME}" ]]; then
+              HELM_ARGS+=(--set ingress.tls.enabled=true --set "ingress.tls.secretName=${INGRESS_TLS_SECRET_NAME}")
+            fi
+          fi
+
+          helm upgrade --install wordpress ./charts/wordpress \
+            "${HELM_ARGS[@]}"
           kubectl -n wordpress wait --for=condition=available deployment/mysql --timeout=600s
           kubectl -n wordpress wait --for=condition=available deployment/wordpress --timeout=600s
           kubectl -n wordpress get pods,svc,hpa

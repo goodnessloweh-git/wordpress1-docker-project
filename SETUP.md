@@ -1,6 +1,6 @@
 # WordPress on EKS - Setup Guide
 
-This guide walks you through deploying WordPress and MySQL on AWS EKS using Terraform and Kubernetes.
+This guide walks you through deploying WordPress and MySQL on AWS EKS using Terraform, Helm, and Kubernetes.
 
 ## Prerequisites
 
@@ -43,11 +43,7 @@ subnet_ids = [
 
 ## Step 3: Build and Push Docker Image
 
-Edit `k8s/wordpress-deployment.yaml` and update the image:
-
-```yaml
-image: your-registry/your-repo:latest  # Change this
-```
+The Helm chart uses `image.repository` and `image.tag` passed by deploy scripts/workflows.
 
 Build and push the image:
 
@@ -58,14 +54,17 @@ docker push your-registry/your-repo:latest
 
 Or use the GitHub Actions workflow (see Step 6).
 
-## Step 4: Update Kubernetes Secrets
+## Step 4: Set Runtime Secrets (do not commit to git)
 
-Edit `k8s/mysql-secret.yaml` with strong passwords:
+Export credentials before deployment:
 
-```yaml
-stringData:
-  mysql-root-password: YourStrongRootPassword!
-  mysql-password: YourStrongUserPassword!
+```bash
+export MYSQL_ROOT_PASSWORD='YourStrongRootPassword!'
+export MYSQL_PASSWORD='YourStrongUserPassword!'
+export DOCKER_REGISTRY='docker.io'
+export DOCKER_REPOSITORY='your-username/wordpress-custom'
+export DOCKER_USERNAME='your-username'      # required for private images
+export DOCKER_PASSWORD='your-token'         # required for private images
 ```
 
 ## Step 5: Deploy to EKS (Local)
@@ -80,13 +79,14 @@ chmod +x k8s/deploy-eks.sh
 This will:
 - Create/update the EKS cluster and node group via Terraform
 - Configure kubectl
-- Deploy MySQL and WordPress
+- Create runtime secrets in Kubernetes
+- Deploy MySQL and WordPress with Helm
 - Output the WordPress external URL
 
 Access WordPress:
 ```bash
 kubectl -n wordpress get svc wordpress
-# Use the EXTERNAL-IP value in your browser
+# Use the external endpoint (EXTERNAL-IP column, often a DNS hostname) in your browser
 ```
 
 ## Step 6: Set Up GitHub Actions (CI/CD)
@@ -104,6 +104,14 @@ In your GitHub repository, add these secrets:
 - `DOCKER_USERNAME`: Your Docker Hub username
 - `DOCKER_PASSWORD`: Your Docker Hub token (or password)
 - `DOCKER_REPOSITORY`: `your-username/wordpress-custom`
+
+### App Runtime Secrets
+- `MYSQL_ROOT_PASSWORD`
+- `MYSQL_PASSWORD`
+
+### Optional Ingress Secrets
+- `INGRESS_HOST`: `wordpress.example.com`
+- `INGRESS_TLS_SECRET_NAME`: `wordpress-tls`
 
 ### Kubernetes Secret
 - `KUBE_CONFIG_DATA`: Base64-encoded kubeconfig
@@ -126,7 +134,7 @@ git push origin main
 
 This will trigger both workflows:
 1. **deploy-infra.yml** - Updates EKS cluster (if you modify `eks-terraform/` or `k8s/` files)
-2. **deploy-app.yml** - Builds image and updates WordPress deployment (on every push to main)
+2. **deploy-app.yml** - Builds image and deploys Helm release (on every push to main)
 
 ## Troubleshooting
 
@@ -150,18 +158,18 @@ kubectl -n wordpress logs <pod-name>
 
 ## Local Minikube Deployment (Alternative)
 
-For local testing with persistent storage:
+For local testing:
 
 ```bash
 chmod +x k8s/deploy-local.sh
 ./k8s/deploy-local.sh
 ```
 
-This starts Minikube and uses hostPath storage (data not persistent on pod restart).
+This starts Minikube and deploys WordPress + MySQL to your local cluster.
 
 ## Production Considerations
 
-- **Secrets Management**: Use AWS Secrets Manager or sealed-secrets instead of plain YAML
+- **Secrets Management**: Use AWS Secrets Manager / External Secrets Operator to sync secrets into Kubernetes
 - **Persistent Storage**: Switch from emptyDir to EBS volumes for data persistence
 - **TLS/SSL**: Add cert-manager and Let's Encrypt for HTTPS
 - **Backup**: Set up EBS snapshots and database backups

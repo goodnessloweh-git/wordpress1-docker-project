@@ -1,0 +1,74 @@
+image:
+  repository: goodness21/wordpress-custom
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - regcred
+
+namespace: wordpress
+
+mysql:
+  image: mysql:5.7
+  existingSecret: mysql-secret
+  rootPasswordKey: mysql-root-password
+  passwordKey: mysql-password
+  userKey: mysql-user
+  databaseKey: mysql-database
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+wordpress:
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+  config:
+    wpTablePrefix: wp_
+    wpDebug: "false"
+
+service:
+  type: LoadBalancer
+  port: 80
+
+ingress:
+  enabled: false
+  className: nginx
+  host: wordpress.example.com
+  annotations: {}
+  managedCertificate:
+    enabled: false
+    name: wordpress-managed-cert
+  tls:
+    enabled: false
+    secretName: wordpress-tls
+
+hpa:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 50
+
+vpa:
+  enabled: false
+  updateMode: Auto
+
+persistence:
+  mysql:
+    enabled: true
+    existingClaim: ""
+    size: 10Gi
+    storageClassName: ""
+  wordpress:
+    enabled: true
+    existingClaim: ""
+    size: 5Gi
+    storageClassName: ""

@@ -1,6 +1,6 @@
 resource "aws_eks_cluster" "wordpress" {
   name = var.cluster_name
-  bootstrap_self_managed_addons = false
+  bootstrap_self_managed_addons = true
 
   access_config {
     authentication_mode                         = "API"

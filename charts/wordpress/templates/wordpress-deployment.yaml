@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: wordpress
+  template:
+    metadata:
+      labels:
+        app: wordpress
+    spec:
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.imagePullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      containers:
+        - name: wordpress
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: WORDPRESS_DB_HOST
+              value: "{{ include "wordpress.mysqlServiceName" . }}:3306"
+            - name: WORDPRESS_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mysql.existingSecret }}
+                  key: {{ .Values.mysql.userKey }}
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mysql.existingSecret }}
+                  key: {{ .Values.mysql.passwordKey }}
+            - name: WORDPRESS_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mysql.existingSecret }}
+                  key: {{ .Values.mysql.databaseKey }}
+          envFrom:
+            - configMapRef:
+                name: wordpress-config
+          ports:
+            - containerPort: 80
+          resources:
+            {{- toYaml .Values.wordpress.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          volumeMounts:
+            - name: wordpress-data
+              mountPath: /var/www/html/wp-content
+      volumes:
+        - name: wordpress-data
+          {{- if .Values.persistence.wordpress.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ if .Values.persistence.wordpress.existingClaim }}{{ .Values.persistence.wordpress.existingClaim }}{{ else }}wordpress-pvc{{ end }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "wordpress.wordpressServiceName" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: wordpress
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 80

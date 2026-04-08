@@ -1,0 +1,18 @@
+{{- if and .Values.persistence.mysql.enabled (not .Values.persistence.mysql.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.persistence.mysql.storageClassName }}
+  storageClassName: {{ .Values.persistence.mysql.storageClassName | quote }}
+  {{- end }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.persistence.mysql.size }}
+{{- end }}

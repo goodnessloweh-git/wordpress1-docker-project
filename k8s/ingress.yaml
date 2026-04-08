@@ -3,10 +3,17 @@ kind: Ingress
 metadata:
   name: wordpress-ingress
   namespace: wordpress
+  annotations:
+    networking.gke.io/managed-certificates: wordpress-managed-cert
 spec:
-  ingressClassName: nginx
+  ingressClassName: gce
+  tls:
+  - hosts:
+    - wordpress.example.com
+    secretName: wordpress-tls
   rules:
-  - http:
+  - host: wordpress.example.com
+    http:
       paths:
       - path: /
         pathType: Prefix

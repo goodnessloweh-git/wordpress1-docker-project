@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wordpress-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+data:
+  WP_TABLE_PREFIX: {{ .Values.wordpress.config.wpTablePrefix | quote }}
+  WP_DEBUG: {{ .Values.wordpress.config.wpDebug | quote }}

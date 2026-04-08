@@ -22,9 +22,15 @@ spec:
               name: mysql-secret
               key: mysql-root-password
         - name: MYSQL_DATABASE
-          value: wordpress
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: mysql-database
         - name: MYSQL_USER
-          value: wpuser
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: mysql-user
         - name: MYSQL_PASSWORD
           valueFrom:
             secretKeyRef:
@@ -54,7 +60,8 @@ spec:
           mountPath: /var/lib/mysql
       volumes:
       - name: mysql-data
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: mysql-pvc
 ---
 apiVersion: v1
 kind: Service

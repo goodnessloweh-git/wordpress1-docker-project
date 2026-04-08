@@ -1,0 +1,12 @@
+{{- if and .Values.ingress.enabled .Values.ingress.managedCertificate.enabled }}
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: {{ .Values.ingress.managedCertificate.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "wordpress.labels" . | nindent 4 }}
+spec:
+  domains:
+    - {{ .Values.ingress.host | quote }}
+{{- end }}

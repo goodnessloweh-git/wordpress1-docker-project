@@ -21,14 +21,23 @@ spec:
         - name: WORDPRESS_DB_HOST
           value: mysql:3306
         - name: WORDPRESS_DB_USER
-          value: wpuser
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: mysql-user
         - name: WORDPRESS_DB_PASSWORD
           valueFrom:
             secretKeyRef:
               name: mysql-secret
               key: mysql-password
         - name: WORDPRESS_DB_NAME
-          value: wordpress
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: mysql-database
+        envFrom:
+        - configMapRef:
+            name: wordpress-config
         ports:
         - containerPort: 80
         resources:
@@ -55,7 +64,8 @@ spec:
           mountPath: /var/www/html/wp-content
       volumes:
       - name: wordpress-data
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: wordpress-pvc
 ---
 apiVersion: v1
 kind: Service

@@ -1,106 +1,161 @@
-# WordPress on AWS EKS (Terraform + Kubernetes + CI/CD)
+# WordPress on Kubernetes (Local + AWS EKS)
 
-This repository deploys a custom WordPress app with MySQL using:
-- Terraform (to provision AWS EKS)
-- Kubernetes manifests (to run WordPress + MySQL)
-- GitHub Actions (to automate infra and app deployment)
+This project deploys WordPress + MySQL using Helm on Kubernetes.
 
-## What this project is about
+Use one of these paths:
+- **Local**: Minikube (quick test)
+- **Cloud**: AWS EKS via Terraform
 
-Goal: package WordPress as a containerized app and deploy it on Kubernetes (EKS), with repeatable infrastructure and CI/CD pipelines.
+## Quick Start (Local Minikube)
 
-## Where to look first
+### Prerequisites
+- Docker
+- kubectl
+- Minikube
+- Helm
 
-- This file (`README.md`) → what this repo is and how to run/test quickly
-- `SETUP.md` → full end-to-end setup guide
-- `.github/workflows/deploy-infra.yml` → Terraform + cluster/app infra deployment
-- `.github/workflows/deploy-app.yml` → image build/push + app rollout
-- `eks-terraform/` → Terraform code for EKS cluster and node group
-- `k8s/` → Kubernetes manifests and helper scripts
-
-## Repository structure
-
-- `eks-terraform/`
-  - `main.tf` : EKS cluster + managed node group + IAM roles
-  - `variables.tf` : Terraform variables
-  - `outputs.tf` : Cluster outputs
-- `k8s/`
-  - `deploy-eks.sh` : deploy/update to AWS EKS
-  - `deploy-local.sh` : local Minikube deploy
-  - `mysql-deployment.yaml`, `wordpress-deployment.yaml`
-  - `mysql-secret.yaml`, `wordpress-configmap.yaml`
-  - `hpa.yaml`, `ingress.yaml`, `namespace.yaml`
-- `.github/workflows/`
-  - `deploy-infra.yml`
-  - `deploy-app.yml`
-
-## Run the app now (quick test)
-
-### Option A: Local test (fastest)
-
-1. Install prerequisites: `docker`, `kubectl`, `minikube`.
-2. Run:
-   ```bash
-   chmod +x k8s/deploy-local.sh
-   ./k8s/deploy-local.sh
-   ```
-3. Verify:
-   ```bash
-   kubectl -n wordpress get pods,svc
-   ```
-4. Open WordPress URL printed by the script.
-
-### Option B: AWS EKS test
-
-1. Configure AWS credentials and set `eks-terraform/terraform.tfvars` subnet IDs.
-2. Run:
-   ```bash
-   chmod +x k8s/deploy-eks.sh
-   ./k8s/deploy-eks.sh
-   ```
-3. Verify:
-   ```bash
-   kubectl -n wordpress get pods,svc
-   kubectl -n wordpress get svc wordpress
-   ```
-4. Open the LoadBalancer endpoint shown in `EXTERNAL-IP`.
-
-## How to verify it works
-
-Run:
+### Required environment variables
 ```bash
-kubectl -n wordpress get pods,svc
+export MYSQL_ROOT_PASSWORD='your-strong-root-password'
+export MYSQL_PASSWORD='your-strong-user-password'
+export MYSQL_USER='wpuser'
+export MYSQL_DATABASE='wordpress'
 ```
 
-Expected:
-- `mysql` and `wordpress` pods show `Running`
-- `wordpress` service has an external endpoint (EKS) or local URL (Minikube)
+### Deploy
+```bash
+chmod +x k8s/deploy-local.sh
+./k8s/deploy-local.sh
+```
 
-## CI/CD behavior
+The script prints a local URL at the end (from `minikube service ... --url`). Open it in your browser.
 
-- Push to `main`:
-  - `deploy-app.yml` builds and pushes Docker image, then updates WordPress deployment.
-- Push changes in `eks-terraform/**` or `k8s/**`:
-  - `deploy-infra.yml` runs Terraform and applies k8s manifests.
+### Verify
+```bash
+kubectl -n wordpress get pods,svc,hpa
+```
 
-Required GitHub secrets:
-- `AWS_ACCESS_KEY_ID`
-- `AWS_SECRET_ACCESS_KEY`
-- `DOCKER_REGISTRY`
-- `DOCKER_USERNAME`
-- `DOCKER_PASSWORD`
-- `DOCKER_REPOSITORY`
-- `KUBE_CONFIG_DATA`
+You should see `mysql` and `wordpress` pods in `Running` state.
 
-## Notes
+---
 
-- Current EKS manifests use `emptyDir` storage for simplicity (non-persistent).
-- Minikube path supports PV/PVC local storage files in `k8s/`.
-- Sensitive files and Terraform state are ignored in `.gitignore`.
+## Quick Start (AWS EKS)
+
+### Prerequisites
+- AWS account + IAM permissions for EKS, EC2, IAM, VPC
+- aws CLI configured (`aws configure`)
+- Terraform
+- kubectl
+- Helm
+
+### Configure Terraform inputs
+Update `eks-terraform/terraform.tfvars` with valid subnets in your target region:
+```hcl
+region = "us-east-1"
+subnet_ids = [
+	"subnet-xxxxx",
+	"subnet-yyyyy",
+	"subnet-zzzzz"
+]
+```
+
+### Required environment variables
+```bash
+export MYSQL_ROOT_PASSWORD='your-strong-root-password'
+export MYSQL_PASSWORD='your-strong-user-password'
+export MYSQL_USER='wpuser'
+export MYSQL_DATABASE='wordpress'
+```
+
+### Optional image settings
+By default, scripts deploy:
+- `DOCKER_REGISTRY=docker.io`
+- `DOCKER_REPOSITORY=goodness21/wordpress-custom`
+- `DOCKER_IMAGE_TAG=latest`
+
+Override if needed:
+```bash
+export DOCKER_REGISTRY='docker.io'
+export DOCKER_REPOSITORY='your-user/your-wordpress-image'
+export DOCKER_IMAGE_TAG='latest'
+```
+
+If your image is private, also set:
+```bash
+export DOCKER_USERNAME='your-registry-username'
+export DOCKER_PASSWORD='your-registry-password-or-token'
+```
+
+### Deploy
+```bash
+chmod +x k8s/deploy-eks.sh
+./k8s/deploy-eks.sh
+```
+
+### Verify and access
+```bash
+kubectl -n wordpress get pods,svc,hpa
+kubectl -n wordpress get svc wordpress
+```
+
+Open the WordPress external endpoint from the `EXTERNAL-IP` column (often a DNS hostname).
+
+---
+
+## Security Notes
+
+- Never commit real credentials to git.
+- Use environment variables or GitHub Actions Secrets.
+- Do not commit `terraform.tfvars`, `.tfstate`, `.env`, kubeconfig, or private key files.
+- This repository includes ignore rules in `.gitignore` for common sensitive files.
+
+---
+
+## Troubleshooting
+
+### Pods not ready
+```bash
+kubectl -n wordpress get pods
+kubectl -n wordpress describe pod <pod-name>
+kubectl -n wordpress logs <pod-name>
+```
+
+### EKS node group create fails
+- Re-check subnet IDs in `eks-terraform/terraform.tfvars`
+- Ensure subnets are in the same region and VPC
+- Re-run `./k8s/deploy-eks.sh`
+
+### No external endpoint yet
+- Wait 2-5 minutes and run:
+```bash
+kubectl -n wordpress get svc wordpress
+```
+
+### No default StorageClass on cluster
+`deploy-eks.sh` automatically switches to ephemeral storage if no default StorageClass exists.
+
+---
 
 ## Cleanup
 
-Destroy cloud resources:
+### Local
+```bash
+kubectl delete namespace wordpress
+```
+
+### EKS (destroy infrastructure)
 ```bash
 terraform -chdir=eks-terraform destroy -auto-approve
 ```
+
+---
+
+## Project entry points
+
+- `k8s/deploy-local.sh` - Local Minikube deployment
+- `k8s/deploy-eks.sh` - Terraform + EKS + Helm deployment
+- `charts/wordpress/` - Helm chart templates and values
+- `.github/workflows/deploy-infra.yml` - Infra pipeline
+- `.github/workflows/deploy-app.yml` - App build/deploy pipeline
+
+For deeper setup and CI/CD guidance, see `SETUP.md` and `DEPLOY_INSTRUCTIONS.md`.
