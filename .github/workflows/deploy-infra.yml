@@ -7,6 +7,13 @@ on:
       - 'k8s/**'
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   AWS_REGION: us-east-1
   TF_DIR: eks-terraform
@@ -15,6 +22,7 @@ env:
 jobs:
   terraform:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Configure AWS credentials
@@ -57,7 +65,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: kubectl apply -f "${K8S_DIR}/namespace.yaml"
       - name: Create image pull secret
-        if: github.ref == 'refs/heads/main'
+        if: ${{ github.ref == 'refs/heads/main' && secrets.DOCKER_REGISTRY != '' && secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
         run: |
           kubectl -n wordpress create secret docker-registry regcred \
             --docker-server='${{ secrets.DOCKER_REGISTRY }}' \

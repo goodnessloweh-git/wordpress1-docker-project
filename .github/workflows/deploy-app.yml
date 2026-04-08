@@ -3,10 +3,19 @@ name: CI/CD - App Deploy
 on:
   push:
     branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Set up Docker Buildx
@@ -31,12 +40,13 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Set up kubectl
         uses: azure/setup-kubectl@v3
         with:
-          version: '1.27.0'
+          version: '1.31.0'
       - name: Set up Helm
         uses: azure/setup-helm@v4
         with:
@@ -64,6 +74,7 @@ jobs:
             --from-literal=mysql-user="${MYSQL_USER_VALUE}" \
             --dry-run=client -o yaml | kubectl apply -f -
       - name: Create image pull secret
+        if: ${{ secrets.DOCKER_REGISTRY != '' && secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
         run: |
           kubectl -n wordpress create secret docker-registry regcred \
             --docker-server='${{ secrets.DOCKER_REGISTRY }}' \
