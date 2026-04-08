@@ -2,9 +2,11 @@ name: CI/CD - Infra (Terraform)
 
 on:
   push:
+    branches: [ main ]
     paths:
       - 'eks-terraform/**'
       - 'k8s/**'
+      - '.github/workflows/deploy-infra.yml'
   workflow_dispatch: {}
 
 permissions:
@@ -18,12 +20,31 @@ env:
   AWS_REGION: us-east-1
   TF_DIR: eks-terraform
   K8S_DIR: k8s
+  TF_VAR_region: us-east-1
+  TF_VAR_subnet_ids: ${{ vars.TF_VAR_SUBNET_IDS }}
+  TF_VAR_node_instance_types: ${{ vars.TF_VAR_NODE_INSTANCE_TYPES }}
 
 jobs:
   terraform:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Validate required secrets and variables
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          TF_VAR_SUBNET_IDS: ${{ vars.TF_VAR_SUBNET_IDS }}
+        run: |
+          missing=0
+          for key in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY TF_VAR_SUBNET_IDS; do
+            if [[ -z "${!key}" ]]; then
+              echo "[error] Missing required secret/variable: $key"
+              missing=1
+            fi
+          done
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
